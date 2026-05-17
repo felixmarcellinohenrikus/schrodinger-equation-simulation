@@ -1,5 +1,6 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from scipy.sparse import diags
 from scipy.sparse.linalg import eigsh
@@ -92,7 +93,7 @@ def solve_time_independent_schrodinger(x, V, mass, num_states=5):
     
     energies, states = eigsh(H, k=num_states, which='SM')
     
-    # PERBAIKAN: np.trapz diganti menjadi np.trapezoid untuk kompatibilitas NumPy ≥2.0
+    # Normalisasi eigenstate
     for i in range(states.shape[1]):
         norm_factor = np.sqrt(np.trapezoid(np.abs(states[:, i])**2, x))
         states[:, i] /= norm_factor
@@ -159,15 +160,46 @@ def main():
             
             # --- KARTU 1: POTENSIAL & EIGENSTATE ---
             st.markdown('<div class="card-container"><h3>📐 Potensial dan Fungsi Gelombang (Eigenstate)</h3></div>', unsafe_allow_html=True)
+            
+            # Skala potensial untuk visualisasi yang lebih baik
+            V_display = V.copy()
+            if v_type == "Sumur Potensial Tak Hingga":
+                # Untuk sumur tak hingga, tampilkan dinding sebagai garis vertikal
+                max_energy = max(energies) if len(energies) > 0 else 10
+                V_display = np.zeros_like(x)
+                V_display[0] = max_energy * 1.5
+                V_display[-1] = max_energy * 1.5
+            
             fig_wave = go.Figure()
-            fig_wave.add_trace(go.Scatter(x=x, y=V, mode='lines', name='V(x)', line=dict(color='#e74c3c', dash='dash')))
+            
+            # Tambahkan potensial
+            fig_wave.add_trace(go.Scatter(
+                x=x, y=V_display, 
+                mode='lines', 
+                name='V(x)', 
+                line=dict(color='#e74c3c', dash='dash', width=2)
+            ))
+            
+            # Tambahkan eigenstate dengan offset energi
+            colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c']
             for i in range(num_states):
                 offset = energies[i]
-                fig_wave.add_trace(go.Scatter(x=x, y=states[:, i].real + offset, mode='lines', name=f'ψ_{i} (Bagian Real)'))
+                # Skala fungsi gelombang agar terlihat
+                psi_scaled = states[:, i].real * 2 + offset
+                fig_wave.add_trace(go.Scatter(
+                    x=x, y=psi_scaled, 
+                    mode='lines', 
+                    name=f'ψ_{i} (Real) + E_{i}',
+                    line=dict(color=colors[i % len(colors)], width=1.5)
+                ))
+                
             fig_wave.update_layout(
                 title="Visualisasi Eigenstate terhadap Potensial",
-                xaxis_title="Posisi (x)", yaxis_title="Energi / Amplitudo",
-                legend_title="State", hovermode="x unified"
+                xaxis_title="Posisi (x)", 
+                yaxis_title="Energi / Amplitudo",
+                legend_title="State", 
+                hovermode="x unified",
+                height=500
             )
             st.plotly_chart(fig_wave, use_container_width=True)
             
@@ -175,21 +207,50 @@ def main():
             st.markdown('<div class="card-container"><h3>📊 Densitas Probabilitas |ψ(x)|²</h3></div>', unsafe_allow_html=True)
             fig_prob = go.Figure()
             for i in range(num_states):
-                fig_prob.add_trace(go.Scatter(x=x, y=np.abs(states[:, i])**2, mode='lines', name=f'n={i}'))
+                fig_prob.add_trace(go.Scatter(
+                    x=x, y=np.abs(states[:, i])**2, 
+                    mode='lines', 
+                    name=f'n={i}',
+                    line=dict(color=colors[i % len(colors)])
+                ))
             fig_prob.update_layout(
                 title="Distribusi Probabilitas Partikel",
-                xaxis_title="Posisi (x)", yaxis_title="Probabilitas |ψ|²",
-                hovermode="x unified"
+                xaxis_title="Posisi (x)", 
+                yaxis_title="Probabilitas |ψ|²",
+                hovermode="x unified",
+                height=400
             )
             st.plotly_chart(fig_prob, use_container_width=True)
             
             # --- KARTU 3: LEVEL ENERGI ---
             st.markdown('<div class="card-container"><h3>⚡ Spektrum Level Energi</h3></div>', unsafe_allow_html=True)
-            energy_df = st.DataFrame({
+            
+            # PERBAIKAN: Gunakan st.dataframe dengan huruf 'd' kecil
+            energy_df = pd.DataFrame({
                 "Keadaan Kuantum (n)": [f"n={i}" for i in range(num_states)],
                 "Energi Eigenvalue (Eₙ)": np.round(energies, 4)
             })
             st.dataframe(energy_df, use_container_width=True, hide_index=True)
+            
+            # Tampilkan diagram level energi
+            fig_energy = go.Figure()
+            fig_energy.add_trace(go.Scatter(
+                x=[0] * num_states,
+                y=energies,
+                mode='markers+text',
+                marker=dict(size=15, color=colors[:num_states]),
+                text=[f"E_{i} = {energies[i]:.4f}" for i in range(num_states)],
+                textposition="right",
+                name="Level Energi"
+            ))
+            fig_energy.update_layout(
+                title="Diagram Level Energi",
+                xaxis=dict(showticklabels=False, showgrid=False),
+                yaxis_title="Energi",
+                height=300,
+                showlegend=False
+            )
+            st.plotly_chart(fig_energy, use_container_width=True)
             
             # --- KARTU 4: EVOLUSI WAKTU & ANIMASI ---
             st.markdown('<div class="card-container"><h3>⏱️ Evolusi Waktu Paket Gelombang</h3></div>', unsafe_allow_html=True)
@@ -213,13 +274,33 @@ def main():
                     prob_t = np.abs(psi_t)**2
                     
                     fig_ev = go.Figure()
-                    fig_ev.add_trace(go.Scatter(x=x, y=prob_t, mode='lines', name='|ψ(x,t)|²', line=dict(color='#00699c')))
-                    fig_ev.add_trace(go.Scatter(x=x, y=V/np.max(np.abs(states[0])**2)*0.5, mode='lines', name='V(x) (skala)', line=dict(color='#e74c3c', dash='dash')))
+                    fig_ev.add_trace(go.Scatter(
+                        x=x, y=prob_t, 
+                        mode='lines', 
+                        name='|ψ(x,t)|²', 
+                        line=dict(color='#00699c', width=2)
+                    ))
+                    # Skala potensial untuk ditampilkan bersama probabilitas
+                    if v_type == "Sumur Potensial Tak Hingga":
+                        V_scale = np.zeros_like(x)
+                        V_scale[0] = np.max(prob_t) * 2
+                        V_scale[-1] = np.max(prob_t) * 2
+                    else:
+                        V_scale = V / np.max(np.abs(V)) * np.max(prob_t) * 0.5
+                    
+                    fig_ev.add_trace(go.Scatter(
+                        x=x, y=V_scale, 
+                        mode='lines', 
+                        name='V(x) (skala)', 
+                        line=dict(color='#e74c3c', dash='dash')
+                    ))
                     fig_ev.update_layout(
                         title=f"Dinamika Probabilitas |ψ(x,t)|² | t = {t:.2f}",
-                        xaxis_title="Posisi (x)", yaxis_title="Densitas Probabilitas",
-                        yaxis_range=[0, np.max(np.abs(states[0])**2)*2.2],
-                        hovermode="x unified"
+                        xaxis_title="Posisi (x)", 
+                        yaxis_title="Densitas Probabilitas",
+                        yaxis_range=[0, np.max(prob_t) * 2.2],
+                        hovermode="x unified",
+                        height=400
                     )
                     placeholder.plotly_chart(fig_ev, use_container_width=True)
                     time.sleep(0.05)
@@ -228,16 +309,23 @@ def main():
             psi_static = evolve_wavefunction(x, states, energies, c0, t_static)
             prob_static = np.abs(psi_static)**2
             fig_static = go.Figure()
-            fig_static.add_trace(go.Scatter(x=x, y=prob_static, mode='lines', name='|ψ(x,t)|²', line=dict(color='#00699c')))
+            fig_static.add_trace(go.Scatter(
+                x=x, y=prob_static, 
+                mode='lines', 
+                name='|ψ(x,t)|²', 
+                line=dict(color='#00699c', width=2)
+            ))
             fig_static.update_layout(
                 title=f"Probabilitas pada t = {t_static:.2f}",
-                xaxis_title="Posisi (x)", yaxis_title="Probabilitas", hovermode="x unified"
+                xaxis_title="Posisi (x)", 
+                yaxis_title="Probabilitas", 
+                hovermode="x unified",
+                height=400
             )
             st.plotly_chart(fig_static, use_container_width=True)
             
             # --- KARTU 5: VALIDASI NORMALISASI ---
             st.markdown('<div class="card-container"><h3>✅ Validasi Normalisasi & Konsistensi Numerik</h3></div>', unsafe_allow_html=True)
-            # PERBAIKAN: np.trapz diganti menjadi np.trapezoid
             norm_val = np.trapezoid(prob_static, x)
             st.markdown(f"""
             <div class="metric-card">

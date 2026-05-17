@@ -170,7 +170,7 @@ def main():
                 
             fig_wave.update_layout(
                 title="Visualisasi Eigenstate terhadap Potensial",
-                xaxis_title="Posisi (x)", yaxis_title="Energi / Amplitudo",
+                xaxis_title="Posisi (x)", yaxis_title="Amplitudo",
                 legend_title="State", hovermode="x unified", height=500
             )
             st.plotly_chart(fig_wave, use_container_width=True, key="wave_chart")

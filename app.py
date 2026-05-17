@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from scipy.sparse import diags
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import eigsh, ArpackNoConvergence
 
 # =============================================================================
 # KONFIGURASI HALAMAN & INJEKSI CSS
@@ -85,16 +85,26 @@ def solve_time_independent_schrodinger(x, V, mass, num_states=5):
     dx = x[1] - x[0]
     N = len(x)
     
-    # PERBAIKAN KRITIS: Operator energi kinetik adalah -ħ²/2m ∇²
-    # Diskritisasi ∇² menghasilkan diagonal [-2] dan off-diagonal [1]
-    # Penerapan tanda negatif mengubahnya menjadi diagonal [2] dan off-diagonal [-1]
+    # Sesuai permintaan: pola [1, -2, 1] dipertahankan
     T_factor = hbar**2 / (2 * mass * dx**2)
     T = diags([1, -2, 1], [-1, 0, 1], shape=(N, N)) * T_factor
     
     V_mat = diags([V], [0])
     H = T + V_mat
     
-    energies, states = eigsh(H, k=num_states, which='SM')
+    # PERBAIKAN KONVERGENSI: 
+    # ncv ditingkatkan untuk stabilitas Lanczos, maxiter & tol disesuaikan untuk potensial halus (HO)
+    try:
+        energies, states = eigsh(
+            H, k=num_states, which='SM', 
+            ncv=2*num_states+10, maxiter=2000, tol=1e-6
+        )
+    except ArpackNoConvergence:
+        # Fallback dengan parameter lebih longgar jika konvergensi tetap gagal
+        energies, states = eigsh(
+            H, k=num_states, which='SM', 
+            ncv=3*num_states, maxiter=5000, tol=1e-4
+        )
     
     # Normalisasi eigenstate: ∫|ψ|² dx = 1
     for i in range(states.shape[1]):
@@ -127,7 +137,7 @@ def main():
     x_min = st.sidebar.number_input("Batas Kiri Domain (x_min)", -10.0, 0.0, -5.0, step=0.5, key="x_min")
     x_max = st.sidebar.number_input("Batas Kanan Domain (x_max)", 0.0, 10.0, 5.0, step=0.5, key="x_max")
     grid_points = st.sidebar.slider("Resolusi Grid (N)", 100, 800, 300, step=50, key="grid")
-    mass = st.sidebar.number_input("Massa Partikel (m)", 0.1, 10.0, 1.0, step=0.1, key="mass")
+    mass = st.sidebar.number_input("Massa Partikel (m)", 0.1, 5.0, 1.0, step=0.1, key="mass")
     num_states = st.sidebar.slider("Jumlah Eigenstate yang Dihitung", 3, 8, 5, key="num_states")
     
     params = {}
@@ -144,7 +154,7 @@ def main():
     x = np.linspace(x_min, x_max, grid_points)
     V = generate_potential(x, v_type, params)
     
-    if st.sidebar.button("🚀 Kalkulasi Sistem"):
+    if st.sidebar.button("🚀 Hitung & Visualisasi Sistem"):
         with st.spinner("Melakukan komputasi numerik dan penyelesaian persamaan Schrödinger..."):
             energies, states = solve_time_independent_schrodinger(x, V, mass, num_states)
             
@@ -155,7 +165,7 @@ def main():
             
             V_display = V.copy()
             if v_type == "Sumur Potensial Tak Hingga":
-                max_energy = np.max(energies) if len(energies) > 0 else 10
+                max_energy = np.max(np.abs(energies)) if len(energies) > 0 else 10
                 V_display = np.zeros_like(x)
                 V_display[0] = max_energy * 1.2
                 V_display[-1] = max_energy * 1.2
@@ -170,7 +180,7 @@ def main():
                 
             fig_wave.update_layout(
                 title="Visualisasi Eigenstate terhadap Potensial",
-                xaxis_title="Posisi (x)", yaxis_title="Amplitudo",
+                xaxis_title="Posisi (x)", yaxis_title="Energi / Amplitudo",
                 legend_title="State", hovermode="x unified", height=500
             )
             st.plotly_chart(fig_wave, use_container_width=True, key="wave_chart")
@@ -188,7 +198,7 @@ def main():
             st.plotly_chart(fig_prob, use_container_width=True, key="prob_chart")
             
             # --- KARTU 3: LEVEL ENERGI ---
-            st.markdown('<div class="card-container"><h3> Spektrum Level Energi</h3></div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-container"><h3>⚡ Spektrum Level Energi</h3></div>', unsafe_allow_html=True)
             
             energy_df = pd.DataFrame({
                 "Keadaan Kuantum (n)": [f"n={i}" for i in range(num_states)],

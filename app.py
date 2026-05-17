@@ -89,7 +89,7 @@ def solve_time_independent_schrodinger(x, V, mass, num_states=5):
     # Diskritisasi ∇² menghasilkan diagonal [-2] dan off-diagonal [1]
     # Penerapan tanda negatif mengubahnya menjadi diagonal [2] dan off-diagonal [-1]
     T_factor = hbar**2 / (2 * mass * dx**2)
-    T = diags([-1, 2, -1], [-1, 0, 1], shape=(N, N)) * T_factor
+    T = diags([1, -2, 1], [-1, 0, 1], shape=(N, N)) * T_factor
     
     V_mat = diags([V], [0])
     H = T + V_mat
@@ -127,7 +127,7 @@ def main():
     x_min = st.sidebar.number_input("Batas Kiri Domain (x_min)", -10.0, 0.0, -5.0, step=0.5, key="x_min")
     x_max = st.sidebar.number_input("Batas Kanan Domain (x_max)", 0.0, 10.0, 5.0, step=0.5, key="x_max")
     grid_points = st.sidebar.slider("Resolusi Grid (N)", 100, 800, 300, step=50, key="grid")
-    mass = st.sidebar.number_input("Massa Partikel (m)", 0.1, 5.0, 1.0, step=0.1, key="mass")
+    mass = st.sidebar.number_input("Massa Partikel (m)", 0.1, 10.0, 1.0, step=0.1, key="mass")
     num_states = st.sidebar.slider("Jumlah Eigenstate yang Dihitung", 3, 8, 5, key="num_states")
     
     params = {}
@@ -144,7 +144,7 @@ def main():
     x = np.linspace(x_min, x_max, grid_points)
     V = generate_potential(x, v_type, params)
     
-    if st.sidebar.button("🚀 Hitung & Visualisasi Sistem"):
+    if st.sidebar.button("🚀 Kalkulasi Sistem"):
         with st.spinner("Melakukan komputasi numerik dan penyelesaian persamaan Schrödinger..."):
             energies, states = solve_time_independent_schrodinger(x, V, mass, num_states)
             

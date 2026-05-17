@@ -16,6 +16,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Inisialisasi session state
+if 'energies' not in st.session_state:
+    st.session_state.energies = None
+if 'states' not in st.session_state:
+    st.session_state.states = None
+if 'x' not in st.session_state:
+    st.session_state.x = None
+if 'V' not in st.session_state:
+    st.session_state.V = None
+
 def inject_custom_css():
     st.markdown("""
     <style>
@@ -106,6 +116,27 @@ def evolve_wavefunction(x, states, energies, coefficients, t, hbar=1.0):
         psi_t += coefficients[n] * states[:, n] * np.exp(-1j * energies[n] * t / hbar)
     return psi_t
 
+def create_static_plot(x, states, energies, c0, t_static, v_type, V):
+    """Membuat plot statis untuk eksplorasi waktu."""
+    psi_static = evolve_wavefunction(x, states, energies, c0, t_static)
+    prob_static = np.abs(psi_static)**2
+    
+    fig_static = go.Figure()
+    fig_static.add_trace(go.Scatter(
+        x=x, y=prob_static, 
+        mode='lines', 
+        name='|ψ(x,t)|²', 
+        line=dict(color='#00699c', width=2)
+    ))
+    fig_static.update_layout(
+        title=f"Probabilitas pada t = {t_static:.2f}",
+        xaxis_title="Posisi (x)", 
+        yaxis_title="Probabilitas", 
+        hovermode="x unified", 
+        height=400
+    )
+    return fig_static, prob_static
+
 # =============================================================================
 # ANTARMUKA STREAMLIT
 # =============================================================================
@@ -127,22 +158,22 @@ def main():
         ["Sumur Potensial Tak Hingga", "Barrier Potensial", "Osilator Harmonik", "Custom"]
     )
     
-    x_min = st.sidebar.number_input("Batas Kiri Domain (x_min)", -10.0, 0.0, -5.0, step=0.5)
-    x_max = st.sidebar.number_input("Batas Kanan Domain (x_max)", 0.0, 10.0, 5.0, step=0.5)
-    grid_points = st.sidebar.slider("Resolusi Grid (N)", 100, 800, 300, step=50)
-    mass = st.sidebar.number_input("Massa Partikel (m)", 0.1, 5.0, 1.0, step=0.1)
-    num_states = st.sidebar.slider("Jumlah Eigenstate yang Dihitung", 3, 8, 5)
+    x_min = st.sidebar.number_input("Batas Kiri Domain (x_min)", -10.0, 0.0, -5.0, step=0.5, key="x_min")
+    x_max = st.sidebar.number_input("Batas Kanan Domain (x_max)", 0.0, 10.0, 5.0, step=0.5, key="x_max")
+    grid_points = st.sidebar.slider("Resolusi Grid (N)", 100, 800, 300, step=50, key="grid")
+    mass = st.sidebar.number_input("Massa Partikel (m)", 0.1, 5.0, 1.0, step=0.1, key="mass")
+    num_states = st.sidebar.slider("Jumlah Eigenstate yang Dihitung", 3, 8, 5, key="num_states")
     
     params = {}
     if v_type == "Barrier Potensial":
-        params['width'] = st.sidebar.number_input("Lebar Barrier", 0.5, 5.0, 1.0)
-        params['height'] = st.sidebar.number_input("Tinggi Barrier (V₀)", 0.0, 50.0, 5.0)
-        params['center'] = st.sidebar.number_input("Pusat Barrier", x_min, x_max, 0.0)
+        params['width'] = st.sidebar.number_input("Lebar Barrier", 0.5, 5.0, 1.0, key="width")
+        params['height'] = st.sidebar.number_input("Tinggi Barrier (V₀)", 0.0, 50.0, 5.0, key="height")
+        params['center'] = st.sidebar.number_input("Pusat Barrier", x_min, x_max, 0.0, key="center")
     elif v_type == "Osilator Harmonik":
-        params['omega'] = st.sidebar.number_input("Frekuensi Sudut (ω)", 0.1, 5.0, 1.0)
+        params['omega'] = st.sidebar.number_input("Frekuensi Sudut (ω)", 0.1, 5.0, 1.0, key="omega")
     elif v_type == "Custom":
-        params['a'] = st.sidebar.number_input("Koefisien a (x²)", 0.0, 10.0, 0.5)
-        params['b'] = st.sidebar.number_input("Koefisien b (x⁴)", 0.0, 5.0, 0.1)
+        params['a'] = st.sidebar.number_input("Koefisien a (x²)", 0.0, 10.0, 0.5, key="a")
+        params['b'] = st.sidebar.number_input("Koefisien b (x⁴)", 0.0, 5.0, 0.1, key="b")
         
     x = np.linspace(x_min, x_max, grid_points)
     V = generate_potential(x, v_type, params)
@@ -150,6 +181,20 @@ def main():
     if st.sidebar.button("🚀 Hitung & Visualisasi Sistem"):
         with st.spinner("Melakukan komputasi numerik dan penyelesaian persamaan Schrödinger..."):
             energies, states = solve_time_independent_schrodinger(x, V, mass, num_states)
+            
+            # Simpan ke session state
+            st.session_state.energies = energies
+            st.session_state.states = states
+            st.session_state.x = x
+            st.session_state.V = V
+            st.session_state.v_type = v_type
+        
+        # Tampilkan hasil perhitungan
+        if st.session_state.energies is not None:
+            energies = st.session_state.energies
+            states = st.session_state.states
+            x = st.session_state.x
+            V = st.session_state.V
             
             c0 = np.zeros(num_states, dtype=complex)
             c0[0] = 1.0
@@ -179,7 +224,7 @@ def main():
                 xaxis_title="Posisi (x)", yaxis_title="Energi / Amplitudo",
                 legend_title="State", hovermode="x unified", height=500
             )
-            st.plotly_chart(fig_wave, use_container_width=True)
+            st.plotly_chart(fig_wave, use_container_width=True, key="wave_chart")
             
             # --- KARTU 2: DENSITAS PROBABILITAS ---
             st.markdown('<div class="card-container"><h3>📊 Densitas Probabilitas |ψ(x)|²</h3></div>', unsafe_allow_html=True)
@@ -191,7 +236,7 @@ def main():
                 xaxis_title="Posisi (x)", yaxis_title="Probabilitas |ψ|²",
                 hovermode="x unified", height=400
             )
-            st.plotly_chart(fig_prob, use_container_width=True)
+            st.plotly_chart(fig_prob, use_container_width=True, key="prob_chart")
             
             # --- KARTU 3: LEVEL ENERGI ---
             st.markdown('<div class="card-container"><h3>⚡ Spektrum Level Energi</h3></div>', unsafe_allow_html=True)
@@ -209,7 +254,7 @@ def main():
                 mode='markers+text',
                 marker=dict(size=15, color=colors[:num_states]),
                 text=[f"E_{i} = {energies[i]:.4f}" for i in range(num_states)],
-                textposition="middle right",  # PERBAIKAN: Format valid untuk Plotly ≥5.x
+                textposition="middle right",
                 name="Level Energi"
             ))
             fig_energy.update_layout(
@@ -220,26 +265,40 @@ def main():
                 showlegend=False,
                 margin=dict(l=20, r=20, t=30, b=20)
             )
-            st.plotly_chart(fig_energy, use_container_width=True)
+            st.plotly_chart(fig_energy, use_container_width=True, key="energy_chart")
             
             # --- KARTU 4: EVOLUSI WAKTU & ANIMASI ---
             st.markdown('<div class="card-container"><h3>⏱️ Evolusi Waktu Paket Gelombang</h3></div>', unsafe_allow_html=True)
             
             st.markdown("Atur komposisi superposisi keadaan kuantum:")
             col1, col2, col3 = st.columns(3)
-            with col1: c0[0] = st.number_input("Koefisien ψ₀", 0.0, 1.0, 1.0, step=0.1, format="%.2f")
-            with col2: c0[1] = st.number_input("Koefisien ψ₁", 0.0, 1.0, 0.0, step=0.1, format="%.2f")
-            with col3: c0[2] = st.number_input("Koefisien ψ₂", 0.0, 1.0, 0.0, step=0.1, format="%.2f")
+            with col1: 
+                c0_0 = st.number_input("Koefisien ψ₀", 0.0, 1.0, 1.0, step=0.1, format="%.2f", key="c0_0")
+            with col2: 
+                c0_1 = st.number_input("Koefisien ψ₁", 0.0, 1.0, 0.0, step=0.1, format="%.2f", key="c0_1")
+            with col3: 
+                c0_2 = st.number_input("Koefisien ψ₂", 0.0, 1.0, 0.0, step=0.1, format="%.2f", key="c0_2")
+            
+            c0[0] = c0_0
+            c0[1] = c0_1
+            c0[2] = c0_2
             
             norm_c = np.sqrt(np.sum(np.abs(c0[:3])**2))
             if norm_c > 0:
                 c0[:3] /= norm_c
-                
-            if st.button("▶️ Jalankan Animasi Evolusi"):
-                placeholder = st.empty()
+            
+            # Simpan koefisien ke session state
+            st.session_state.c0 = c0
+            
+            # Tombol animasi
+            if st.button("▶️ Jalankan Animasi Evolusi", key="anim_button"):
                 max_time = 20.0
                 frames = 60
-                for t in np.linspace(0, max_time, frames):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                anim_placeholder = st.empty()
+                
+                for i, t in enumerate(np.linspace(0, max_time, frames)):
                     psi_t = evolve_wavefunction(x, states, energies, c0, t)
                     prob_t = np.abs(psi_t)**2
                     
@@ -260,20 +319,22 @@ def main():
                         yaxis_range=[0, np.max(prob_t) * 2.2],
                         hovermode="x unified", height=400
                     )
-                    placeholder.plotly_chart(fig_ev, use_container_width=True)
+                    anim_placeholder.plotly_chart(fig_ev, use_container_width=True, key=f"anim_{i}")
+                    progress_bar.progress((i + 1) / frames)
+                    status_text.text(f"Animasi: t = {t:.2f} / {max_time:.2f}")
                     time.sleep(0.05)
-                    
-            t_static = st.slider("Eksplorasi Waktu Statis (t)", 0.0, 20.0, 0.0, 0.05)
-            psi_static = evolve_wavefunction(x, states, energies, c0, t_static)
-            prob_static = np.abs(psi_static)**2
-            fig_static = go.Figure()
-            fig_static.add_trace(go.Scatter(x=x, y=prob_static, mode='lines', name='|ψ(x,t)|²', line=dict(color='#00699c', width=2)))
-            fig_static.update_layout(
-                title=f"Probabilitas pada t = {t_static:.2f}",
-                xaxis_title="Posisi (x)", yaxis_title="Probabilitas", 
-                hovermode="x unified", height=400
-            )
-            st.plotly_chart(fig_static, use_container_width=True)
+                
+                progress_bar.empty()
+                status_text.empty()
+                st.success("✅ Animasi selesai!")
+            
+            # Slider eksplorasi statis (SELALU TAMPIL)
+            st.markdown("### Eksplorasi Waktu Statis (t)")
+            t_static = st.slider("Pilih waktu untuk visualisasi statis", 0.0, 20.0, 0.0, 0.05, key="t_static")
+            
+            # Buat dan tampilkan plot statis
+            fig_static, prob_static = create_static_plot(x, states, energies, c0, t_static, v_type, V)
+            st.plotly_chart(fig_static, use_container_width=True, key="static_chart")
             
             # --- KARTU 5: VALIDASI NORMALISASI ---
             st.markdown('<div class="card-container"><h3>✅ Validasi Normalisasi & Konsistensi Numerik</h3></div>', unsafe_allow_html=True)
@@ -287,6 +348,7 @@ def main():
             </p>
             """, unsafe_allow_html=True)
             
+    # FOOTER
     st.markdown('<div class="footer-container">© 2026 - Felix Marcellino Henrikus, S.Si. - UKSW Salatiga</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":

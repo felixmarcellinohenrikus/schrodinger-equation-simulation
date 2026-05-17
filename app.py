@@ -4,7 +4,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy.sparse import diags
 from scipy.sparse.linalg import eigsh
-import time
 
 # =============================================================================
 # KONFIGURASI HALAMAN & INJEKSI CSS
@@ -15,16 +14,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# Inisialisasi session state
-if 'energies' not in st.session_state:
-    st.session_state.energies = None
-if 'states' not in st.session_state:
-    st.session_state.states = None
-if 'x' not in st.session_state:
-    st.session_state.x = None
-if 'V' not in st.session_state:
-    st.session_state.V = None
 
 def inject_custom_css():
     st.markdown("""
@@ -96,46 +85,23 @@ def solve_time_independent_schrodinger(x, V, mass, num_states=5):
     dx = x[1] - x[0]
     N = len(x)
     
+    # PERBAIKAN KRITIS: Operator energi kinetik adalah -ħ²/2m ∇²
+    # Diskritisasi ∇² menghasilkan diagonal [-2] dan off-diagonal [1]
+    # Penerapan tanda negatif mengubahnya menjadi diagonal [2] dan off-diagonal [-1]
     T_factor = hbar**2 / (2 * mass * dx**2)
-    T = diags([1, -2, 1], [-1, 0, 1], shape=(N, N)) * T_factor
+    T = diags([-1, 2, -1], [-1, 0, 1], shape=(N, N)) * T_factor
+    
     V_mat = diags([V], [0])
     H = T + V_mat
     
     energies, states = eigsh(H, k=num_states, which='SM')
     
+    # Normalisasi eigenstate: ∫|ψ|² dx = 1
     for i in range(states.shape[1]):
         norm_factor = np.sqrt(np.trapezoid(np.abs(states[:, i])**2, x))
         states[:, i] /= norm_factor
         
     return energies, states
-
-def evolve_wavefunction(x, states, energies, coefficients, t, hbar=1.0):
-    """Evolusi waktu menggunakan dekomposisi spektral."""
-    psi_t = np.zeros(len(x), dtype=complex)
-    for n in range(len(energies)):
-        psi_t += coefficients[n] * states[:, n] * np.exp(-1j * energies[n] * t / hbar)
-    return psi_t
-
-def create_static_plot(x, states, energies, c0, t_static, v_type, V):
-    """Membuat plot statis untuk eksplorasi waktu."""
-    psi_static = evolve_wavefunction(x, states, energies, c0, t_static)
-    prob_static = np.abs(psi_static)**2
-    
-    fig_static = go.Figure()
-    fig_static.add_trace(go.Scatter(
-        x=x, y=prob_static, 
-        mode='lines', 
-        name='|ψ(x,t)|²', 
-        line=dict(color='#00699c', width=2)
-    ))
-    fig_static.update_layout(
-        title=f"Probabilitas pada t = {t_static:.2f}",
-        xaxis_title="Posisi (x)", 
-        yaxis_title="Probabilitas", 
-        hovermode="x unified", 
-        height=400
-    )
-    return fig_static, prob_static
 
 # =============================================================================
 # ANTARMUKA STREAMLIT
@@ -152,7 +118,7 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    st.sidebar.header("⚙️ Parameter Sistem")
+    st.sidebar.header("️ Parameter Sistem")
     v_type = st.sidebar.selectbox(
         "Jenis Potensial",
         ["Sumur Potensial Tak Hingga", "Barrier Potensial", "Osilator Harmonik", "Custom"]
@@ -181,23 +147,6 @@ def main():
     if st.sidebar.button("🚀 Hitung & Visualisasi Sistem"):
         with st.spinner("Melakukan komputasi numerik dan penyelesaian persamaan Schrödinger..."):
             energies, states = solve_time_independent_schrodinger(x, V, mass, num_states)
-            
-            # Simpan ke session state
-            st.session_state.energies = energies
-            st.session_state.states = states
-            st.session_state.x = x
-            st.session_state.V = V
-            st.session_state.v_type = v_type
-        
-        # Tampilkan hasil perhitungan
-        if st.session_state.energies is not None:
-            energies = st.session_state.energies
-            states = st.session_state.states
-            x = st.session_state.x
-            V = st.session_state.V
-            
-            c0 = np.zeros(num_states, dtype=complex)
-            c0[0] = 1.0
             
             colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#34495e', '#d35400']
             
@@ -239,7 +188,7 @@ def main():
             st.plotly_chart(fig_prob, use_container_width=True, key="prob_chart")
             
             # --- KARTU 3: LEVEL ENERGI ---
-            st.markdown('<div class="card-container"><h3>⚡ Spektrum Level Energi</h3></div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-container"><h3> Spektrum Level Energi</h3></div>', unsafe_allow_html=True)
             
             energy_df = pd.DataFrame({
                 "Keadaan Kuantum (n)": [f"n={i}" for i in range(num_states)],
@@ -267,88 +216,18 @@ def main():
             )
             st.plotly_chart(fig_energy, use_container_width=True, key="energy_chart")
             
-            # --- KARTU 4: EVOLUSI WAKTU & ANIMASI ---
-            st.markdown('<div class="card-container"><h3>⏱️ Evolusi Waktu Paket Gelombang</h3></div>', unsafe_allow_html=True)
-            
-            st.markdown("Atur komposisi superposisi keadaan kuantum:")
-            col1, col2, col3 = st.columns(3)
-            with col1: 
-                c0_0 = st.number_input("Koefisien ψ₀", 0.0, 1.0, 1.0, step=0.1, format="%.2f", key="c0_0")
-            with col2: 
-                c0_1 = st.number_input("Koefisien ψ₁", 0.0, 1.0, 0.0, step=0.1, format="%.2f", key="c0_1")
-            with col3: 
-                c0_2 = st.number_input("Koefisien ψ₂", 0.0, 1.0, 0.0, step=0.1, format="%.2f", key="c0_2")
-            
-            c0[0] = c0_0
-            c0[1] = c0_1
-            c0[2] = c0_2
-            
-            norm_c = np.sqrt(np.sum(np.abs(c0[:3])**2))
-            if norm_c > 0:
-                c0[:3] /= norm_c
-            
-            # Simpan koefisien ke session state
-            st.session_state.c0 = c0
-            
-            # Tombol animasi
-            if st.button("▶️ Jalankan Animasi Evolusi", key="anim_button"):
-                max_time = 20.0
-                frames = 60
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                anim_placeholder = st.empty()
-                
-                for i, t in enumerate(np.linspace(0, max_time, frames)):
-                    psi_t = evolve_wavefunction(x, states, energies, c0, t)
-                    prob_t = np.abs(psi_t)**2
-                    
-                    fig_ev = go.Figure()
-                    fig_ev.add_trace(go.Scatter(x=x, y=prob_t, mode='lines', name='|ψ(x,t)|²', line=dict(color='#00699c', width=2)))
-                    
-                    if v_type == "Sumur Potensial Tak Hingga":
-                        V_scale = np.zeros_like(x)
-                        V_scale[0] = np.max(prob_t) * 1.5
-                        V_scale[-1] = np.max(prob_t) * 1.5
-                    else:
-                        V_scale = V / np.max(np.abs(V)) * np.max(prob_t) * 0.5 if np.max(np.abs(V)) > 0 else np.zeros_like(x)
-                    
-                    fig_ev.add_trace(go.Scatter(x=x, y=V_scale, mode='lines', name='V(x) (skala)', line=dict(color='#e74c3c', dash='dash')))
-                    fig_ev.update_layout(
-                        title=f"Dinamika Probabilitas |ψ(x,t)|² | t = {t:.2f}",
-                        xaxis_title="Posisi (x)", yaxis_title="Densitas Probabilitas",
-                        yaxis_range=[0, np.max(prob_t) * 2.2],
-                        hovermode="x unified", height=400
-                    )
-                    anim_placeholder.plotly_chart(fig_ev, use_container_width=True, key=f"anim_{i}")
-                    progress_bar.progress((i + 1) / frames)
-                    status_text.text(f"Animasi: t = {t:.2f} / {max_time:.2f}")
-                    time.sleep(0.05)
-                
-                progress_bar.empty()
-                status_text.empty()
-                st.success("✅ Animasi selesai!")
-            
-            # Slider eksplorasi statis (SELALU TAMPIL)
-            st.markdown("### Eksplorasi Waktu Statis (t)")
-            t_static = st.slider("Pilih waktu untuk visualisasi statis", 0.0, 20.0, 0.0, 0.05, key="t_static")
-            
-            # Buat dan tampilkan plot statis
-            fig_static, prob_static = create_static_plot(x, states, energies, c0, t_static, v_type, V)
-            st.plotly_chart(fig_static, use_container_width=True, key="static_chart")
-            
-            # --- KARTU 5: VALIDASI NORMALISASI ---
-            st.markdown('<div class="card-container"><h3>✅ Validasi Normalisasi & Konsistensi Numerik</h3></div>', unsafe_allow_html=True)
-            norm_val = np.trapezoid(prob_static, x)
+            # --- KARTU 4: VALIDASI NORMALISASI ---
+            st.markdown('<div class="card-container"><h3>✅ Validasi Normalisasi Fungsi Gelombang</h3></div>', unsafe_allow_html=True)
+            norm_val = np.trapezoid(np.abs(states[:, 0])**2, x)
             st.markdown(f"""
             <div class="metric-card">
-                <strong>Hasil Integrasi:</strong> ∫ |ψ(x,t)|² dx = <span style="color:#00699c; font-weight:bold;">{norm_val:.6f}</span>
+                <strong>Hasil Integrasi (Keadaan Dasar n=0):</strong> ∫ |ψ₀(x)|² dx = <span style="color:#00699c; font-weight:bold;">{norm_val:.6f}</span>
             </div>
             <p style="margin-top:0.5rem; font-size:0.9rem; color:#555;">
-            Nilai yang mendekati <strong>1.000000</strong> mengindikasikan bahwa fungsi gelombang terormalisasi secara konsisten sepanjang evolusi waktu, sesuai dengan postulat konservasi probabilitas dalam mekanika kuantum.
+            Nilai yang mendekati <strong>1.000000</strong> mengonfirmasi bahwa fungsi gelombang telah terormalisasi secara numerik, memenuhi postulat interpretasi probabilistik Born dalam mekanika kuantum.
             </p>
             """, unsafe_allow_html=True)
             
-    # FOOTER
     st.markdown('<div class="footer-container">© 2026 - Felix Marcellino Henrikus, S.Si. - UKSW Salatiga</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":

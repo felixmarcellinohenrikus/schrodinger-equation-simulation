@@ -61,7 +61,6 @@ def inject_custom_css():
 def generate_potential(x, v_type, params):
     """Membangkitkan array potensial berdasarkan jenis dan parameter."""
     if v_type == "Sumur Potensial Tak Hingga":
-        # Pendekatan dinding keras pada batas domain
         V = np.zeros_like(x)
         V[0], V[-1] = 1e5, 1e5
         return V
@@ -82,28 +81,26 @@ def generate_potential(x, v_type, params):
 
 def solve_time_independent_schrodinger(x, V, mass, num_states=5):
     """Menyelesaikan TISE 1D menggunakan metode beda hingga & sparse eigensolver."""
-    hbar = 1.0  # Satuan atomik untuk keperluan pedagogis
+    hbar = 1.0
     dx = x[1] - x[0]
     N = len(x)
     
-    # Matriks energi kinetik (finite difference)
     T_factor = hbar**2 / (2 * mass * dx**2)
     T = diags([1, -2, 1], [-1, 0, 1], shape=(N, N)) * T_factor
     V_mat = diags([V], [0])
     H = T + V_mat
     
-    # Penyelesaian eigenvalue
     energies, states = eigsh(H, k=num_states, which='SM')
     
-    # Normalisasi eigenstate: ∫|ψ|² dx = 1
+    # PERBAIKAN: np.trapz diganti menjadi np.trapezoid untuk kompatibilitas NumPy ≥2.0
     for i in range(states.shape[1]):
-        norm_factor = np.sqrt(np.trapz(np.abs(states[:, i])**2, x))
+        norm_factor = np.sqrt(np.trapezoid(np.abs(states[:, i])**2, x))
         states[:, i] /= norm_factor
         
     return energies, states
 
 def evolve_wavefunction(x, states, energies, coefficients, t, hbar=1.0):
-    """Evolusi waktu menggunakan dekomposisi spektral: ψ(x,t) = Σ cₙ φₙ(x) e^(-iEₙt/ħ)"""
+    """Evolusi waktu menggunakan dekomposisi spektral."""
     psi_t = np.zeros(len(x), dtype=complex)
     for n in range(len(energies)):
         psi_t += coefficients[n] * states[:, n] * np.exp(-1j * energies[n] * t / hbar)
@@ -157,11 +154,10 @@ def main():
         with st.spinner("Melakukan komputasi numerik dan penyelesaian persamaan Schrödinger..."):
             energies, states = solve_time_independent_schrodinger(x, V, mass, num_states)
             
-            # Inisialisasi koefisien superposisi (default: keadaan dasar)
             c0 = np.zeros(num_states, dtype=complex)
             c0[0] = 1.0
             
-            # --- KONTAINER KARTU 1: POTENSIAL & EIGENSTATE ---
+            # --- KARTU 1: POTENSIAL & EIGENSTATE ---
             st.markdown('<div class="card-container"><h3>📐 Potensial dan Fungsi Gelombang (Eigenstate)</h3></div>', unsafe_allow_html=True)
             fig_wave = go.Figure()
             fig_wave.add_trace(go.Scatter(x=x, y=V, mode='lines', name='V(x)', line=dict(color='#e74c3c', dash='dash')))
@@ -175,7 +171,7 @@ def main():
             )
             st.plotly_chart(fig_wave, use_container_width=True)
             
-            # --- KONTAINER KARTU 2: DENSITAS PROBABILITAS ---
+            # --- KARTU 2: DENSITAS PROBABILITAS ---
             st.markdown('<div class="card-container"><h3>📊 Densitas Probabilitas |ψ(x)|²</h3></div>', unsafe_allow_html=True)
             fig_prob = go.Figure()
             for i in range(num_states):
@@ -187,7 +183,7 @@ def main():
             )
             st.plotly_chart(fig_prob, use_container_width=True)
             
-            # --- KONTAINER KARTU 3: LEVEL ENERGI ---
+            # --- KARTU 3: LEVEL ENERGI ---
             st.markdown('<div class="card-container"><h3>⚡ Spektrum Level Energi</h3></div>', unsafe_allow_html=True)
             energy_df = st.DataFrame({
                 "Keadaan Kuantum (n)": [f"n={i}" for i in range(num_states)],
@@ -195,7 +191,7 @@ def main():
             })
             st.dataframe(energy_df, use_container_width=True, hide_index=True)
             
-            # --- KONTAINER KARTU 4: EVOLUSI WAKTU & ANIMASI ---
+            # --- KARTU 4: EVOLUSI WAKTU & ANIMASI ---
             st.markdown('<div class="card-container"><h3>⏱️ Evolusi Waktu Paket Gelombang</h3></div>', unsafe_allow_html=True)
             
             st.markdown("Atur komposisi superposisi keadaan kuantum:")
@@ -204,7 +200,6 @@ def main():
             with col2: c0[1] = st.number_input("Koefisien ψ₁", 0.0, 1.0, 0.0, step=0.1, format="%.2f")
             with col3: c0[2] = st.number_input("Koefisien ψ₂", 0.0, 1.0, 0.0, step=0.1, format="%.2f")
             
-            # Normalisasi manual koefisien superposisi
             norm_c = np.sqrt(np.sum(np.abs(c0[:3])**2))
             if norm_c > 0:
                 c0[:3] /= norm_c
@@ -229,7 +224,6 @@ def main():
                     placeholder.plotly_chart(fig_ev, use_container_width=True)
                     time.sleep(0.05)
                     
-            # Slider statis untuk eksplorasi manual
             t_static = st.slider("Eksplorasi Waktu Statis (t)", 0.0, 20.0, 0.0, 0.05)
             psi_static = evolve_wavefunction(x, states, energies, c0, t_static)
             prob_static = np.abs(psi_static)**2
@@ -241,9 +235,10 @@ def main():
             )
             st.plotly_chart(fig_static, use_container_width=True)
             
-            # --- KONTAINER KARTU 5: VALIDASI NORMALISASI ---
+            # --- KARTU 5: VALIDASI NORMALISASI ---
             st.markdown('<div class="card-container"><h3>✅ Validasi Normalisasi & Konsistensi Numerik</h3></div>', unsafe_allow_html=True)
-            norm_val = np.trapz(prob_static, x)
+            # PERBAIKAN: np.trapz diganti menjadi np.trapezoid
+            norm_val = np.trapezoid(prob_static, x)
             st.markdown(f"""
             <div class="metric-card">
                 <strong>Hasil Integrasi:</strong> ∫ |ψ(x,t)|² dx = <span style="color:#00699c; font-weight:bold;">{norm_val:.6f}</span>

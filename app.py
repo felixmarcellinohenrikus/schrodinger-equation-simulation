@@ -225,19 +225,7 @@ def main():
                 margin=dict(l=20, r=20, t=30, b=20)
             )
             st.plotly_chart(fig_energy, use_container_width=True, key="energy_chart")
-            
-            # --- KARTU 4: VALIDASI NORMALISASI ---
-            st.markdown('<div class="card-container"><h3>✅ Validasi Normalisasi Fungsi Gelombang</h3></div>', unsafe_allow_html=True)
-            norm_val = np.trapezoid(np.abs(states[:, 0])**2, x)
-            st.markdown(f"""
-            <div class="metric-card">
-                <strong>Hasil Integrasi (Keadaan Dasar n=0):</strong> ∫ |ψ₀(x)|² dx = <span style="color:#00699c; font-weight:bold;">{norm_val:.6f}</span>
-            </div>
-            <p style="margin-top:0.5rem; font-size:0.9rem; color:#555;">
-            Nilai yang mendekati <strong>1.000000</strong> mengonfirmasi bahwa fungsi gelombang telah terormalisasi secara numerik, memenuhi postulat interpretasi probabilistik Born dalam mekanika kuantum.
-            </p>
-            """, unsafe_allow_html=True)
-            
+                       
     st.markdown('<div class="footer-container">© 2026 - Felix Marcellino Henrikus, S.Si. - UKSW Salatiga</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
